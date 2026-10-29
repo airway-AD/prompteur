@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0D12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Air Draw</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0D12;
+    --panel: #14171F;
+    --panel-2: #1B1F29;
+    --border: #262B37;
+    --text: #F2F4F8;
+    --muted: #8B93A7;
+    --accent: #7C8CFF;
+    --rec: #FF3B4A;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: var(--bg); color: var(--text);
+    overflow: hidden; -webkit-font-smoothing: antialiased;
+  }
+  button, a { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; text-decoration: none; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .stage { position: fixed; inset: 0; background: #000; }
+  #video { display: none; }
+  #out { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* Curseur (pas enregistre) */
+  .cursor {
+    position: fixed; left: 0; top: 0; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+    border-radius: 50%; border: 2px solid #fff; pointer-events: none;
+    opacity: 0; transition: width .15s, height .15s, margin .15s, opacity .15s;
+    box-shadow: 0 0 12px rgba(255,255,255,.4);
+  }
+  .cursor.draw { background: currentColor; border-color: currentColor; width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+  .cursor.erase { width: 90px; height: 90px; margin: -45px 0 0 -45px; border-style: dashed; }
+
+  /* Barre du haut */
+  .top {
+    position: fixed; top: 0; left: 0; right: 0;
+    padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top));
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: linear-gradient(to bottom, rgba(11,13,18,.85), transparent);
+    pointer-events: none;
+  }
+  .top > * { pointer-events: auto; }
+  .brand { font-weight: 600; font-size: 17px; display: flex; align-items: center; gap: 10px; }
+  .pill {
+    display: flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: 999px; font-size: 14px; font-weight: 500;
+    background: rgba(20,23,31,.75); backdrop-filter: blur(10px); border: 1px solid var(--border);
+  }
+  .pill svg { width: 16px; height: 16px; }
+
+  /* Palette */
+  .palette {
+    position: fixed; top: 50%; right: 16px; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 12px; padding: 12px;
+    background: rgba(20,23,31,.7); backdrop-filter: blur(10px);
+    border: 1px solid var(--border); border-radius: 999px;
+  }
+  .swatch {
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--c); box-shadow: 0 0 14px var(--c);
+    border: 3px solid transparent; transition: transform .15s, border-color .15s;
+    position: relative;
+  }
+  .swatch.on { border-color: #fff; transform: scale(1.08); }
+  .swatch.hover { transform: scale(1.2); }
+  .swatch .ring {
+    position: absolute; inset: -6px; border-radius: 50%;
+    border: 2px solid #fff; opacity: 0; transform: scale(.6);
+  }
+  .swatch.hover .ring { opacity: 1; transform: scale(1); transition: transform .6s linear, opacity .1s; }
+  .sep { height: 1px; background: var(--border); margin: 2px 6px; }
+  .tool {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center; color: var(--muted);
+  }
+  .tool svg { width: 20px; height: 20px; }
+  .tool:hover { color: var(--text); }
+
+  /* Bas : rec + aide */
+  .bottom {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 20px; padding-bottom: max(24px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    background: linear-gradient(to top, rgba(11,13,18,.85), transparent);
+  }
+  .help { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .help .pill { font-size: 13px; color: var(--muted); }
+  .help .pill b { color: var(--text); font-weight: 600; }
+  .rec-btn {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: rgba(255,255,255,.95); display: grid; place-items: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45);
+  }
+  .rec-btn .inner { width: 54px; height: 54px; border-radius: 50%; background: var(--rec); transition: all .2s ease; }
+  body.recording .rec-btn .inner { width: 26px; height: 26px; border-radius: 6px; }
+  .rec-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .rec-badge { display: none; }
+  body.recording .rec-badge { display: flex; }
+  .rec-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  /* Ecran de demarrage */
+  .start {
+    position: fixed; inset: 0; display: grid; place-items: center; text-align: center;
+    background: radial-gradient(900px 500px at 50% 20%, #1A2140 0%, transparent 60%), var(--bg);
+    padding: 24px; z-index: 5;
+  }
+  .start h1 { font-size: 34px; font-weight: 700; margin-bottom: 10px; }
+  .start p { color: var(--muted); max-width: 420px; margin: 0 auto 24px; line-height: 1.5; }
+  .btn-primary {
+    background: var(--accent); color: #0B0D12; font-weight: 600;
+    padding: 14px 24px; border-radius: 999px;
+  }
+  .btn-primary:disabled { opacity: .6; }
+  .start .back { display: inline-block; margin-top: 18px; color: var(--muted); font-size: 14px; }
+
+  .toast {
+    position: fixed; left: 50%; top: 80px; transform: translate(-50%, -200%);
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 10px 10px 10px 18px; border-radius: 999px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5); transition: transform .3s ease; z-index: 10;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast a { background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+
+  @media (max-width: 600px) {
+    .help { display: none; }
+    .palette { right: 10px; gap: 10px; padding: 10px; }
+    .swatch, .tool { width: 40px; height: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <video id="video" playsinline muted></video>
+  <canvas id="out"></canvas>
+</div>
+<div class="cursor" id="cursor"></div>
+
+<header class="top">
+  <div class="brand">Air Draw</div>
+  <div style="display:flex; gap:8px">
+    <div class="pill rec-badge"><span class="dot"></span><span id="timer">00:00</span></div>
+    <a class="pill" href="./index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>
+      Prompteur
+    </a>
+  </div>
+</header>
+
+<nav class="palette" id="palette" aria-label="Couleurs et outils">
+  <button class="swatch on" style="--c:#7C8CFF" data-color="#7C8CFF" aria-label="Bleu"><span class="ring"></span></button>
+  <button class="swatch" style="--c:#FF3BCE" data-color="#FF3BCE" aria-label="Rose"><span class="ring"></span></button>
+  <button class="swatch" style="--c:#39FFB6" data-color="#39FFB6" aria-label="Vert"><span class="ring"></span></button>
+  <button class="swatch" style="--c:#FFD23F" data-color="#FFD23F" aria-label="Jaune"><span class="ring"></span></button>
+  <button class="swatch" style="--c:#FFFFFF" data-color="#FFFFFF" aria-label="Blanc"><span class="ring"></span></button>
+  <div class="sep"></div>
+  <button class="tool" id="undo" aria-label="Annuler le dernier trait">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></svg>
+  </button>
+  <button class="tool" id="clear" aria-label="Tout effacer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+  </button>
+</nav>
+
+<footer class="bottom">
+  <div class="help">
+    <span class="pill"><b>Index</b> dessiner</span>
+    <span class="pill"><b>Index + majeur</b> déplacer</span>
+    <span class="pill"><b>Main ouverte</b> gomme</span>
+    <span class="pill"><b>Poing 1 s</b> tout effacer</span>
+  </div>
+  <button class="rec-btn" id="recBtn" aria-label="Démarrer l'enregistrement" disabled><span class="inner"></span></button>
+</footer>
+
+<div class="start" id="start">
+  <div>
+    <h1>Air Draw</h1>
+    <p>Dessine dans les airs avec ton doigt, directement sur la vidéo. Tout tourne en local dans ton navigateur.</p>
+    <button class="btn-primary" id="go">Activer la caméra</button>
+    <div><a class="back" href="./index.html">Retour au prompteur</a></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span>Vidéo prête</span><a id="dl" download>Télécharger</a></div>
+
+<script type="module">
+import { HandLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs';
+
+const $ = id => document.getElementById(id);
+const video = $('video'), out = $('out'), ctx = out.getContext('2d');
+const cursor = $('cursor');
+const ink = document.createElement('canvas'), ictx = ink.getContext('2d');
+
+let color = '#7C8CFF';
+let stream, landmarker, lastVideoTime = -1;
+let mode = 'idle', prev = null, smooth = null, fistSince = 0;
+let strokes = [], current = null; // pour l'annulation
+
+// ---------- Demarrage ----------
+$('go').onclick = async () => {
+  $('go').disabled = true; $('go').textContent = 'Chargement...';
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: true
+    });
+    video.srcObject = stream;
+    await video.play();
+    const fileset = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm');
+    landmarker = await HandLandmarker.createFromOptions(fileset, {
+      baseOptions: {
+        modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+        delegate: 'GPU'
+      },
+      runningMode: 'VIDEO', numHands: 1
+    });
+    out.width = ink.width = video.videoWidth;
+    out.height = ink.height = video.videoHeight;
+    $('start').style.display = 'none';
+    $('recBtn').disabled = false;
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error(e);
+    $('go').disabled = false; $('go').textContent = 'Réessayer';
+    document.querySelector('.start p').textContent = 'Impossible d\'accéder à la caméra ou de charger le modèle. Vérifie les autorisations et ta connexion.';
+  }
+};
+
+// ---------- Gestes ----------
+const up = (lm, tip, pip) => lm[tip].y < lm[pip].y;
+function gesture(lm) {
+  const i = up(lm, 8, 6), m = up(lm, 12, 10), r = up(lm, 16, 14), p = up(lm, 20, 18);
+  if (i && m && r && p) return 'erase';
+  if (i && m && !r) return 'hover';
+  if (i && !m && !r && !p) return 'draw';
+  if (!i && !m && !r && !p) return 'fist';
+  return 'idle';
+}
+
+// coords canvas (miroir) -> coords ecran (object-fit: cover)
+function toScreen(x, y) {
+  const W = innerWidth, H = innerHeight;
+  const s = Math.max(W / out.width, H / out.height);
+  return { x: (W - out.width * s) / 2 + x * s, y: (H - out.height * s) / 2 + y * s };
+}
+
+// ---------- Dessin ----------
+function line(a, b) {
+  ictx.lineCap = ictx.lineJoin = 'round';
+  ictx.globalCompositeOperation = 'source-over';
+  ictx.shadowColor = color; ictx.shadowBlur = 24;
+  ictx.strokeStyle = color; ictx.lineWidth = 10;
+  ictx.beginPath(); ictx.moveTo(a.x, a.y); ictx.lineTo(b.x, b.y); ictx.stroke();
+  ictx.shadowBlur = 0; ictx.strokeStyle = 'rgba(255,255,255,.85)'; ictx.lineWidth = 3;
+  ictx.beginPath(); ictx.moveTo(a.x, a.y); ictx.lineTo(b.x, b.y); ictx.stroke();
+}
+function eraseAt(p) {
+  ictx.globalCompositeOperation = 'destination-out';
+  ictx.beginPath(); ictx.arc(p.x, p.y, 45 * (out.width / innerWidth || 1), 0, Math.PI * 2); ictx.fill();
+  ictx.globalCompositeOperation = 'source-over';
+}
+function snapshot() { strokes.push(ictx.getImageData(0, 0, ink.width, ink.height)); if (strokes.length > 20) strokes.shift(); }
+function clearAll() { snapshot(); ictx.clearRect(0, 0, ink.width, ink.height); }
+
+$('undo').onclick = () => { const s = strokes.pop(); if (s) ictx.putImageData(s, 0, 0); else ictx.clearRect(0, 0, ink.width, ink.height); };
+$('clear').onclick = clearAll;
+
+// ---------- Palette (clic ou survol au doigt) ----------
+const swatches = [...document.querySelectorAll('.swatch')];
+function pick(el) { swatches.forEach(s => s.classList.toggle('on', s === el)); color = el.dataset.color; }
+swatches.forEach(s => s.onclick = () => pick(s));
+let hoverEl = null, hoverSince = 0;
+function dwell(screen) {
+  const el = document.elementFromPoint(screen.x, screen.y);
+  const target = el && (el.closest('.swatch') || el.closest('.tool'));
+  if (target !== hoverEl) {
+    hoverEl && hoverEl.classList.remove('hover');
+    hoverEl = target; hoverSince = performance.now();
+    hoverEl && hoverEl.classList.add('hover');
+  } else if (hoverEl && performance.now() - hoverSince > 600) {
+    hoverEl.classList.remove('hover');
+    hoverEl.classList.contains('swatch') ? pick(hoverEl) : hoverEl.click();
+    hoverEl = null; hoverSince = Infinity;
+  }
+  return !!target;
+}
+
+// ---------- Boucle ----------
+function loop() {
+  const W = out.width, H = out.height;
+  // video miroir
+  ctx.save(); ctx.translate(W, 0); ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0, W, H);
+  ctx.restore();
+
+  if (video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const res = landmarker.detectForVideo(video, performance.now());
+    const lm = res.landmarks && res.landmarks[0];
+    if (lm) {
+      const g = gesture(lm);
+      const ref = g === 'erase' ? lm[9] : lm[8];
+      const raw = { x: (1 - ref.x) * W, y: ref.y * H };
+      smooth = smooth ? { x: smooth.x + (raw.x - smooth.x) * .45, y: smooth.y + (raw.y - smooth.y) * .45 } : raw;
+      const sc = toScreen(smooth.x, smooth.y);
+      const overUI = (g === 'hover' || g === 'draw') && dwell(sc);
+
+      cursor.style.opacity = 1; cursor.style.color = color;
+      cursor.style.transform = `translate(${sc.x}px, ${sc.y}px)`;
+      cursor.className = 'cursor' + (g === 'draw' && !overUI ? ' draw' : g === 'erase' ? ' erase' : '');
+
+      if (g === 'draw' && !overUI) {
+        if (mode !== 'draw') { snapshot(); prev = smooth; }
+        else line(prev, smooth);
+        prev = smooth;
+      } else if (g === 'erase') {
+        if (mode !== 'erase') snapshot();
+        eraseAt(smooth);
+      } else if (g === 'fist') {
+        if (mode !== 'fist') fistSince = performance.now();
+        else if (performance.now() - fistSince > 1000) { clearAll(); fistSince = Infinity; }
+      }
+      mode = overUI ? 'hover' : g;
+    } else {
+      cursor.style.opacity = 0; mode = 'idle'; smooth = null;
+      if (hoverEl) { hoverEl.classList.remove('hover'); hoverEl = null; }
+    }
+  }
+  ctx.drawImage(ink, 0, 0);
+  requestAnimationFrame(loop);
+}
+
+// ---------- Enregistrement (video + dessin fusionnes) ----------
+let recorder, chunks = [], t0, timerId, lastUrl;
+const pickMime = () => ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm']
+  .find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+const fmt = s => String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+$('recBtn').onclick = () => {
+  if (recorder && recorder.state === 'recording') {
+    recorder.stop(); clearInterval(timerId);
+    document.body.classList.remove('recording');
+    $('recBtn').setAttribute('aria-label', 'Démarrer l\'enregistrement');
+    return;
+  }
+  const mixed = out.captureStream(30);
+  stream.getAudioTracks().forEach(t => mixed.addTrack(t));
+  const mime = pickMime();
+  chunks = [];
+  recorder = new MediaRecorder(mixed, mime ? { mimeType: mime } : undefined);
+  recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+  recorder.onstop = () => {
+    const type = recorder.mimeType || 'video/webm';
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(new Blob(chunks, { type }));
+    $('dl').href = lastUrl;
+    $('dl').download = `airdraw-${Date.now()}.${type.includes('mp4') ? 'mp4' : 'webm'}`;
+    $('toast').classList.add('show');
+  };
+  recorder.start(1000);
+  $('toast').classList.remove('show');
+  document.body.classList.add('recording');
+  $('recBtn').setAttribute('aria-label', 'Arrêter l\'enregistrement');
+  t0 = Date.now();
+  timerId = setInterval(() => $('timer').textContent = fmt((Date.now() - t0) / 1000), 250);
+};
+
+// Raccourcis clavier
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); $('undo').click(); }
+  if (e.key === 'Backspace' || e.key === 'Delete') clearAll();
+  if (e.key.toLowerCase() === 'r' && !$('recBtn').disabled) $('recBtn').click();
+});
+</script>
+</body>
+</html>
