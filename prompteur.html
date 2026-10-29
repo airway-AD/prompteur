@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0D12">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Prompteur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0B0D12;
+    --panel: #14171F;
+    --panel-2: #1B1F29;
+    --border: #262B37;
+    --text: #F2F4F8;
+    --muted: #8B93A7;
+    --accent: #7C8CFF;
+    --rec: #FF3B4A;
+    --radius: 20px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Outfit', system-ui, sans-serif;
+    background: radial-gradient(1200px 600px at 10% -10%, #1A2140 0%, transparent 60%), var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
+  button:focus-visible, textarea:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app {
+    height: 100dvh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    padding: 20px;
+    padding-top: max(20px, env(safe-area-inset-top));
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .panel {
+    position: relative;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* ---------- Camera ---------- */
+  .cam video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+    background: #000;
+  }
+  .cam-empty {
+    position: absolute; inset: 0;
+    display: grid; place-items: center; text-align: center;
+    color: var(--muted); gap: 14px; padding: 24px;
+  }
+  .cam-empty .btn-primary {
+    background: var(--accent); color: #0B0D12; font-weight: 600;
+    padding: 12px 20px; border-radius: 999px;
+  }
+  .badge {
+    position: absolute; top: 16px; left: 16px;
+    display: none; align-items: center; gap: 8px;
+    background: rgba(0,0,0,.55); backdrop-filter: blur(8px);
+    padding: 6px 12px; border-radius: 999px;
+    font-weight: 600; font-variant-numeric: tabular-nums; font-size: 14px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rec); animation: blink 1s infinite; }
+  .recording .badge { display: flex; }
+  @keyframes blink { 50% { opacity: .25; } }
+
+  .rec-btn {
+    position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%);
+    width: 76px; height: 76px; border-radius: 50%;
+    background: rgba(255,255,255,.95);
+    display: grid; place-items: center;
+    box-shadow: 0 8px 30px rgba(0,0,0,.45);
+    transition: transform .15s ease;
+  }
+  .rec-btn:active { transform: translateX(-50%) scale(.94); }
+  .rec-btn .inner {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--rec);
+    transition: all .2s ease;
+  }
+  .recording .rec-btn .inner { width: 28px; height: 28px; border-radius: 6px; }
+  .rec-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+  .cam-tools { position: absolute; top: 16px; right: 16px; display: flex; gap: 8px; }
+  .icon-btn {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: rgba(0,0,0,.5); backdrop-filter: blur(8px);
+  }
+  .icon-btn svg { width: 20px; height: 20px; }
+
+  .countdown {
+    position: absolute; inset: 0; display: none; place-items: center;
+    font-size: 140px; font-weight: 700; background: rgba(0,0,0,.35);
+  }
+  .countdown.show { display: grid; }
+
+  /* ---------- Prompteur ---------- */
+  .prompt { display: flex; flex-direction: column; }
+  .prompt-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+  }
+  .prompt-head h1 { font-size: 16px; font-weight: 600; letter-spacing: .2px; }
+  .seg { display: flex; background: var(--panel-2); border-radius: 999px; padding: 4px; }
+  .seg button { padding: 6px 14px; border-radius: 999px; font-size: 14px; color: var(--muted); font-weight: 500; }
+  .seg button.on { background: var(--text); color: var(--bg); }
+
+  .stage { position: relative; flex: 1; min-height: 0; }
+  textarea.editor {
+    width: 100%; height: 100%; resize: none;
+    background: transparent; border: 0; color: var(--text);
+    font: 500 18px/1.6 'Outfit', sans-serif; padding: 20px;
+  }
+  textarea.editor::placeholder { color: var(--muted); }
+  .reader {
+    position: absolute; inset: 0; overflow-y: auto; display: none;
+    scrollbar-width: none;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 75%, transparent 100%);
+            mask-image: linear-gradient(to bottom, transparent 0, #000 12%, #000 75%, transparent 100%);
+  }
+  .reader::-webkit-scrollbar { display: none; }
+  .reader .txt {
+    padding: 18vh 28px 70vh;
+    font-weight: 600; line-height: 1.35;
+    white-space: pre-wrap; word-wrap: break-word;
+  }
+  .reader.mirror .txt { transform: scaleX(-1); }
+  .guide {
+    position: absolute; left: 0; right: 0; top: 22%;
+    display: none; align-items: center; pointer-events: none;
+  }
+  .guide::before { content: ''; border: 7px solid transparent; border-left-color: var(--accent); margin-left: 6px; }
+  .guide::after { content: ''; flex: 1; height: 1px; background: linear-gradient(90deg, var(--accent), transparent); opacity: .5; }
+  .mode-read .reader { display: block; }
+  .mode-read .guide { display: flex; }
+  .mode-read textarea.editor { display: none; }
+
+  .controls {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 12px 16px; border-top: 1px solid var(--border);
+  }
+  .play {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: var(--accent); color: #0B0D12;
+    display: grid; place-items: center; flex: none;
+  }
+  .play svg { width: 22px; height: 22px; }
+  .ctrl { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 140px; }
+  .ctrl label { font-size: 13px; color: var(--muted); width: 48px; }
+  .ctrl output { font-size: 13px; color: var(--muted); width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { flex: 1; accent-color: var(--accent); height: 28px; }
+  .chip {
+    padding: 8px 12px; border-radius: 999px; font-size: 13px;
+    background: var(--panel-2); color: var(--muted); border: 1px solid var(--border);
+  }
+  .chip.on { color: var(--text); border-color: var(--accent); }
+
+  /* ---------- Toast / download ---------- */
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translate(-50%, 140%);
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 10px 10px 10px 18px; border-radius: 999px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+    transition: transform .3s ease; z-index: 10;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast a {
+    background: var(--text); color: var(--bg); text-decoration: none;
+    padding: 8px 16px; border-radius: 999px; font-weight: 600; font-size: 14px;
+  }
+
+  /* ---------- Mobile portrait : prompteur en haut, pres de la camera ---------- */
+  @media (max-width: 820px) and (orientation: portrait) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 1.1fr 1fr; gap: 10px; padding: 10px; }
+    .prompt { order: -1; }
+    .reader .txt { padding: 6vh 20px 60vh; }
+    .guide { top: 14%; }
+    .rec-btn { width: 66px; height: 66px; bottom: 16px; }
+    .rec-btn .inner { width: 48px; height: 48px; }
+    .controls { gap: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- CAMERA -->
+  <section class="panel cam" id="cam" aria-label="Caméra">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="cam-empty" id="camEmpty">
+      <div>
+        <p style="margin-bottom:14px">Autorise la caméra et le micro pour commencer</p>
+        <button class="btn-primary" id="enableCam">Activer la caméra</button>
+      </div>
+    </div>
+    <div class="badge"><span class="dot"></span><span id="timer">00:00</span></div>
+    <div class="cam-tools">
+      <button class="icon-btn" id="flip" aria-label="Changer de caméra">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-3l-2-3H9L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M9 13a3 3 0 0 1 5.2-2"/><path d="M15 15a3 3 0 0 1-5.2 2"/><path d="M14 9v2h2"/><path d="M10 19v-2H8"/></svg>
+      </button>
+    </div>
+    <div class="countdown" id="countdown" aria-live="assertive"></div>
+    <button class="rec-btn" id="recBtn" aria-label="Démarrer l'enregistrement" disabled><span class="inner"></span></button>
+  </section>
+
+  <!-- PROMPTEUR -->
+  <section class="panel prompt" id="prompt" aria-label="Prompteur">
+    <div class="prompt-head">
+      <h1>Prompteur</h1>
+      <div class="seg" role="tablist">
+        <button id="tabEdit" class="on">Texte</button>
+        <button id="tabRead">Lecture</button>
+      </div>
+    </div>
+
+    <div class="stage" id="stage">
+      <textarea class="editor" id="editor" placeholder="Colle ton texte ici..."></textarea>
+      <div class="reader" id="reader"><div class="txt" id="txt"></div></div>
+      <div class="guide"></div>
+    </div>
+
+    <div class="controls">
+      <button class="play" id="playBtn" aria-label="Lecture / pause">
+        <svg id="icoPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+        <svg id="icoPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+      </button>
+      <div class="ctrl">
+        <label for="speed">Vitesse</label>
+        <input type="range" id="speed" min="1" max="10" step="1" value="4">
+        <output id="speedVal">4</output>
+      </div>
+      <div class="ctrl">
+        <label for="size">Taille</label>
+        <input type="range" id="size" min="20" max="80" step="2" value="40">
+        <output id="sizeVal">40</output>
+      </div>
+      <button class="chip" id="mirrorBtn" aria-pressed="false">Miroir</button>
+    </div>
+  </section>
+</div>
+
+<div class="toast" id="toast">
+  <span>Vidéo prête</span>
+  <a id="dl" download>Télécharger</a>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const app = $('app'), cam = $('cam'), video = $('video');
+  const editor = $('editor'), reader = $('reader'), txt = $('txt'), stage = $('stage');
+  const recBtn = $('recBtn'), playBtn = $('playBtn');
+  const speed = $('speed'), size = $('size');
+
+  // ---------- Persistance (localStorage, try/catch) ----------
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('prompteur:' + k); return v === null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem('prompteur:' + k, v); } catch {} }
+  };
+  editor.value = store.get('text', '');
+  speed.value = store.get('speed', 4);
+  size.value = store.get('size', 40);
+  let mirror = store.get('mirror', '0') === '1';
+
+  // ---------- Mode texte / lecture ----------
+  function setMode(read) {
+    stage.classList.toggle('mode-read', read);
+    $('tabRead').classList.toggle('on', read);
+    $('tabEdit').classList.toggle('on', !read);
+    if (read) { txt.textContent = editor.value || 'Ajoute ton texte dans l\'onglet Texte.'; }
+    else { pause(); }
+  }
+  $('tabEdit').onclick = () => setMode(false);
+  $('tabRead').onclick = () => setMode(true);
+  editor.addEventListener('input', () => store.set('text', editor.value));
+
+  // ---------- Reglages ----------
+  function applySettings() {
+    $('speedVal').textContent = speed.value;
+    $('sizeVal').textContent = size.value;
+    txt.style.fontSize = size.value + 'px';
+    reader.classList.toggle('mirror', mirror);
+    $('mirrorBtn').classList.toggle('on', mirror);
+    $('mirrorBtn').setAttribute('aria-pressed', mirror);
+  }
+  speed.oninput = () => { store.set('speed', speed.value); applySettings(); };
+  size.oninput = () => { store.set('size', size.value); applySettings(); };
+  $('mirrorBtn').onclick = () => { mirror = !mirror; store.set('mirror', mirror ? '1' : '0'); applySettings(); };
+  applySettings();
+
+  // ---------- Defilement ----------
+  let playing = false, last = 0, acc = 0;
+  function tick(t) {
+    if (!playing) return;
+    const dt = last ? (t - last) / 1000 : 0;
+    last = t;
+    acc += dt * speed.value * 14; // px/s
+    if (acc >= 1) { const step = Math.floor(acc); reader.scrollTop += step; acc -= step; }
+    if (reader.scrollTop + reader.clientHeight >= reader.scrollHeight - 2) { pause(); return; }
+    requestAnimationFrame(tick);
+  }
+  function play() {
+    if (!stage.classList.contains('mode-read')) setMode(true);
+    playing = true; last = 0; acc = 0;
+    $('icoPlay').style.display = 'none'; $('icoPause').style.display = '';
+    requestAnimationFrame(tick);
+  }
+  function pause() {
+    playing = false;
+    $('icoPlay').style.display = ''; $('icoPause').style.display = 'none';
+  }
+  playBtn.onclick = () => playing ? pause() : play();
+  reader.addEventListener('click', () => playing ? pause() : play());
+
+  // ---------- Camera ----------
+  let stream = null, facing = 'user';
+  async function startCam() {
+    try {
+      if (stream) stream.getTracks().forEach(t => t.stop());
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: { echoCancellation: true, noiseSuppression: true }
+      });
+      video.srcObject = stream;
+      video.style.transform = facing === 'user' ? 'scaleX(-1)' : 'none';
+      $('camEmpty').style.display = 'none';
+      recBtn.disabled = false;
+    } catch (e) {
+      $('camEmpty').querySelector('p').textContent = 'Accès caméra refusé ou indisponible. Vérifie les autorisations (et que la page est en HTTPS).';
+    }
+  }
+  $('enableCam').onclick = startCam;
+  $('flip').onclick = () => { if (recorder && recorder.state === 'recording') return; facing = facing === 'user' ? 'environment' : 'user'; startCam(); };
+
+  // ---------- Enregistrement ----------
+  let recorder = null, chunks = [], t0 = 0, timerId = null, lastUrl = null;
+  function pickMime() {
+    const types = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'];
+    return types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+  }
+  function fmt(s) { return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(Math.floor(s % 60)).padStart(2, '0'); }
+
+  function countdown(n) {
+    return new Promise(res => {
+      const el = $('countdown'); el.classList.add('show');
+      const step = () => {
+        if (n === 0) { el.classList.remove('show'); return res(); }
+        el.textContent = n--; setTimeout(step, 800);
+      };
+      step();
+    });
+  }
+
+  async function startRec() {
+    if (!stream) return;
+    recBtn.disabled = true;
+    $('toast').classList.remove('show');
+    setMode(true);
+    reader.scrollTop = 0;
+    await countdown(3);
+    const mime = pickMime();
+    chunks = [];
+    recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+    recorder.ondataavailable = e => e.data.size && chunks.push(e.data);
+    recorder.onstop = onStop;
+    recorder.start(1000);
+    cam.classList.add('recording');
+    recBtn.setAttribute('aria-label', 'Arrêter l\'enregistrement');
+    recBtn.disabled = false;
+    t0 = Date.now();
+    timerId = setInterval(() => $('timer').textContent = fmt((Date.now() - t0) / 1000), 250);
+    play();
+  }
+  function stopRec() {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    pause();
+    clearInterval(timerId);
+    cam.classList.remove('recording');
+    recBtn.setAttribute('aria-label', 'Démarrer l\'enregistrement');
+    $('timer').textContent = '00:00';
+  }
+  function onStop() {
+    const type = recorder.mimeType || 'video/webm';
+    const blob = new Blob(chunks, { type });
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    const ext = type.includes('mp4') ? 'mp4' : 'webm';
+    const d = new Date();
+    const name = `prompteur-${d.toISOString().slice(0,10)}-${String(d.getHours()).padStart(2,'0')}${String(d.getMinutes()).padStart(2,'0')}.${ext}`;
+    $('dl').href = lastUrl; $('dl').download = name;
+    $('toast').classList.add('show');
+  }
+  recBtn.onclick = () => (recorder && recorder.state === 'recording') ? stopRec() : startRec();
+
+  // ---------- Clavier ----------
+  document.addEventListener('keydown', e => {
+    if (document.activeElement === editor) return;
+    if (e.code === 'Space') { e.preventDefault(); playing ? pause() : play(); }
+    if (e.key === 'ArrowUp') { speed.value = Math.min(10, +speed.value + 1); speed.oninput(); }
+    if (e.key === 'ArrowDown') { speed.value = Math.max(1, +speed.value - 1); speed.oninput(); }
+    if (e.key.toLowerCase() === 'r' && !recBtn.disabled) recBtn.click();
+  });
+
+  // Lance la camera direct si deja autorisee
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'camera' }).then(p => { if (p.state === 'granted') startCam(); }).catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
